@@ -39,6 +39,7 @@ int g_button;                           /* Button Input                 */
 int g_current_return;                   /* Current Return Value         */
 int g_flags;                            /* Target Flags                 */
 int g_i;                                /* Iteration Variable           */
+int g_j;                                /* Iteration Variable           */
 int g_state;                            /* Motor Direction State        */
 
 /*************************************************************************
@@ -48,10 +49,10 @@ int g_state;                            /* Motor Direction State        */
 /*------------------------------------------------------------------------
 
     PROCEDURE NAME: setup
-    
+
     DESCRIPTION: Called at start-up before any processor functions are
                  initiated.
-                 
+
 ------------------------------------------------------------------------*/
 
 void setup
@@ -66,7 +67,7 @@ void setup
     while (!Serial) {
     ; // wait for serial port to connect. Needed for Leonardo only
     }
-    
+
     /*--------------------------------------------------------------------
     Set up the GPIO ports
     --------------------------------------------------------------------*/
@@ -74,7 +75,7 @@ void setup
     pinMode( INPUT_B, OUTPUT );
     pinMode( STATUS_LED, OUTPUT );
     pinMode( BUTTON, INPUT );
-    
+
     /*--------------------------------------------------------------------
     Set up Timer
     --------------------------------------------------------------------*/
@@ -92,17 +93,18 @@ void setup
     g_averaged_value = 0;
     g_flags          = 0;
     g_i              = 0;
+    g_j              = 0;
     g_state          = FORWARD;
-    
+
     Serial.println("Power Up Complete!");
 }
 
 /*------------------------------------------------------------------------
 
     PROCEDURE NAME: timer1callback
-    
+
     DESCRIPTION: Callback for the Timer 1 interrupt.
-                 
+
 ------------------------------------------------------------------------*/
 
 void timer1callback
@@ -121,9 +123,9 @@ void timer1callback
 /*------------------------------------------------------------------------
 
     PROCEDURE NAME: loop
-    
+
     DESCRIPTION: Called in an infinite loop after the setup() function.
-                 
+
 ------------------------------------------------------------------------*/
 
 void loop
@@ -141,8 +143,11 @@ void loop
     Increment the iteration divisor and increment the current return until
     the timer ISR prints it out to reset it.
     --------------------------------------------------------------------*/
-    g_averaged_value += g_current_return;
-    g_i++;
+    if( ++g_j > 100 ) {
+        g_averaged_value += g_current_return;
+        g_i++;
+        g_j = 0;
+    }
 
     /*--------------------------------------------------------------------
     Move the motor when the button is depressed, stop the motor and
