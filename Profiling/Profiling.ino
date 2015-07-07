@@ -65,7 +65,7 @@ int g_current_return;                   /* Current Return Value         */
 int g_flags;                            /* Target Flags                 */
 int g_i;                                /* Iteration Variable           */
 int g_j;                                /* Iteration Variable           */
-int g_profiling_array[ 2 ][ 100 ];        /* Profiling Array              */
+int g_profiling_array[ 2 ][ 200 ];      /* Profiling Array              */
 int g_state;                            /* Motor Direction State        */
 int g_time_in_direction[ 2 ];           /* Time Spent Going in Direction*/
 int g_time_iteration;                   /* Iteration Time Variable      */
@@ -150,6 +150,7 @@ void set_motor
     } else {
         digitalWrite( INPUT_B, LOW );
         digitalWrite( INPUT_A, LOW );
+        g_state ^= 1;
     }   
             
 }
@@ -187,7 +188,7 @@ void setup
     /*--------------------------------------------------------------------
     Set up Timer
     --------------------------------------------------------------------*/
-    Timer1.initialize( 250000 );        /* Half-second timer            */
+    Timer1.initialize( 250000 );        /* Quarter-second timer         */
     Timer1.attachInterrupt( timer1callback );
 
     /*--------------------------------------------------------------------
@@ -232,7 +233,7 @@ void timer1callback
         /*----------------------------------------------------------------
         Add the value to the array of values
         ----------------------------------------------------------------*/
-        g_profiling_array[ g_state ][ g_time_iteration ] = g_averaged_value;
+        g_profiling_array[ g_state ][ g_time_iteration++ ] = g_averaged_value;
         
         /*----------------------------------------------------------------
         Print current value for debug
@@ -244,7 +245,6 @@ void timer1callback
         ----------------------------------------------------------------*/
         g_averaged_value = 0;
         g_i              = 0;
-        g_time_iteration = 0;
         
         /*----------------------------------------------------------------
         Increment time values
@@ -252,6 +252,14 @@ void timer1callback
         g_time_in_direction[ g_state ]++;
     }
     
+    /*--------------------------------------------------------------------
+    Stop motor when running and time has elapsed
+    --------------------------------------------------------------------*/
+    if( get_flag( FLAG_RUN ) && get_flag( FLAG_GATE ) ) {
+        if( ++g_time_iteration == g_time_in_direction[ g_state ] ) {
+            set_flag( FLAG_STOP );
+        }
+    }    
 }
 
 /*------------------------------------------------------------------------
@@ -315,16 +323,20 @@ void loop
             /*------------------------------------------------------------
             Stop the motor and print the elapsed time
             ------------------------------------------------------------*/
-            set_motor( FALSE, g_state );
             Serial.print( "Took " );
-            Serial.print( (float)( g_time_in_direction[ g_state ] / 2 ) );
+            Serial.print( (float)( g_time_in_direction[ g_state ] / 4 ) );
             Serial.print( " seconds to move window.\n\r" );
+            set_motor( FALSE, g_state );
+            
+            /*------------------------------------------------------------
+            Reset time iteration
+            ------------------------------------------------------------*/
+            g_time_iteration = 0;
             
             /*------------------------------------------------------------
             If only first direction has run, switch directions
             ------------------------------------------------------------*/
             if( !get_flag( FLAG_CHECK ) ) {
-                g_state ^= 1;
                 set_flag( FLAG_CHECK );
                 clear_flag( FLAG_STOP );
                 clear_flag( FLAG_GATE );
@@ -335,15 +347,47 @@ void loop
             If both directions have run, quit powerup sequence
             ------------------------------------------------------------*/
             } else {
-                g_state ^= 1;
                 clear_flag( FLAG_CHECK );
                 clear_flag( FLAG_PWRUP );
                 clear_flag( FLAG_GATE );
                 clear_flag( FLAG_STOP );
                 clear_flag( FLAG_SETUP );
+                set_flag( FLAG_RUN );
                 Serial.println( "CALIBRATION COMPLETE" );
             }
         }
+    }
+    
+    if( get_flag( FLAG_RUN ) ) {
+        /*----------------------------------------------------------------
+        Wait for button to activate motor
+        ----------------------------------------------------------------*/
+        if( g_button == HIGH ) {
+            if( !get_flag( FLAG_GATE ) ) {
+                /*--------------------------------------------------------
+                Set motor to correct direction
+                --------------------------------------------------------*/
+                set_motor( TRUE, g_state );
+                
+                /*--------------------------------------------------------
+                Setup flags
+                --------------------------------------------------------*/
+                set_flag( FLAG_GATE );
+            }
+            
+        /*----------------------------------------------------------------
+        Stop the motor when it has run for the correct time
+        ----------------------------------------------------------------*/
+        } else if( get_flag( FLAG_STOP ) ) {
+            /*------------------------------------------------------------
+            Stop the motor and clear the flags
+            ------------------------------------------------------------*/
+            set_motor( FALSE, g_state );
+            g_time_iteration = 0;
+            clear_flag( FLAG_GATE );
+            clear_flag( FLAG_STOP );
+        }
+        
     }
     
 }
