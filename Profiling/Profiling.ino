@@ -3,7 +3,7 @@ File Name:   Profiling
 Name:        Automatic Window Control Program
 Author:      Benjamin Degn
 Created:     Jun 15, 2015
-Modified:    Jun 15, 2015
+Modified:    Aug 05, 2015
 Description:
     Controls the basic calibration and operation of the system.
 *************************************************************************/
@@ -12,6 +12,7 @@ Description:
                               GENRAL INCLUDES
 *************************************************************************/
 
+#include "PinChangeInt.h"
 #include "TimerOne.h"
 
 /*************************************************************************
@@ -89,7 +90,8 @@ void clear_flag
 {
     g_flags ^= flags;
     
-}
+}  /* clear_flag() */
+
 
 /*------------------------------------------------------------------------
 
@@ -106,7 +108,8 @@ int get_flag
 {
     return ( ( g_flags & flags ) == flags );
     
-}
+}  /* get_flag() */
+
 
 /*------------------------------------------------------------------------
 
@@ -123,7 +126,8 @@ void set_flag
 {
     g_flags |= flags;
     
-}
+}  /* set_flag() */
+
 
 /*------------------------------------------------------------------------
 
@@ -153,7 +157,8 @@ void set_motor
         g_state ^= 1;
     }   
             
-}
+}  /* set_motor() */
+
 
 /*------------------------------------------------------------------------
 
@@ -189,7 +194,12 @@ void setup
     Set up Timer
     --------------------------------------------------------------------*/
     Timer1.initialize( 250000 );        /* Quarter-second timer         */
-    Timer1.attachInterrupt( timer1callback );
+    Timer1.attachInterrupt( timer1_callback );
+
+    /*--------------------------------------------------------------------
+    Set up button callback
+    --------------------------------------------------------------------*/
+    PCintPort::attachInterrupt( BUTTON, button_callback, CHANGE );
 
     /*--------------------------------------------------------------------
     Set up the PWM
@@ -209,95 +219,30 @@ void setup
     Serial.println( "Power Up Complete!" );
     Serial.println( "HOLD BUTTON UNTIL FULLY OPEN" );
     
-}
+}  /* setup() */
+
 
 /*------------------------------------------------------------------------
 
-    PROCEDURE NAME: timer1callback
+    PROCEDURE NAME: button_callback
 
-    DESCRIPTION: Callback for the Timer 1 interrupt.
-
-------------------------------------------------------------------------*/
-
-void timer1callback
-    (
-    void
-    )
-{
-    if( get_flag( FLAG_SETUP ) ) {
-        /*----------------------------------------------------------------
-        Average the value over the number of samples
-        ----------------------------------------------------------------*/
-        g_averaged_value /= g_i;
-        
-        /*----------------------------------------------------------------
-        Add the value to the array of values
-        ----------------------------------------------------------------*/
-        g_profiling_array[ g_state ][ g_time_iteration++ ] = g_averaged_value;
-        
-        /*----------------------------------------------------------------
-        Print current value for debug
-        ----------------------------------------------------------------*/
-        Serial.println( g_averaged_value );
-        
-        /*----------------------------------------------------------------
-        Reset iteration variables
-        ----------------------------------------------------------------*/
-        g_averaged_value = 0;
-        g_i              = 0;
-        
-        /*----------------------------------------------------------------
-        Increment time values
-        ----------------------------------------------------------------*/
-        g_time_in_direction[ g_state ]++;
-    }
-    
-    /*--------------------------------------------------------------------
-    Stop motor when running and time has elapsed
-    --------------------------------------------------------------------*/
-    if( get_flag( FLAG_RUN ) && get_flag( FLAG_GATE ) ) {
-        if( ++g_time_iteration == g_time_in_direction[ g_state ] ) {
-            set_flag( FLAG_STOP );
-        }
-    }    
-}
-
-/*------------------------------------------------------------------------
-
-    PROCEDURE NAME: loop
-
-    DESCRIPTION: Called in an infinite loop after the setup() function.
+    DESCRIPTION: Callback for the Button interrupt.
 
 ------------------------------------------------------------------------*/
 
-void loop
+void button_callback
     (
     void
     )
 {
     /*--------------------------------------------------------------------
-    Always read the button for input
+    Debounce the pin; return if pin reads high
     --------------------------------------------------------------------*/
     g_button = digitalRead( BUTTON );
+    delay( 2 );
+    if( g_button != digitalRead( BUTTON ) ) return;
     
-    if( get_flag( FLAG_SETUP ) || get_flag( FLAG_RUN ) ) {
-        /*----------------------------------------------------------------
-        Get current if in a setup or running state
-        ----------------------------------------------------------------*/
-        g_current_return = analogRead( CURRENT_INP );
-
-        /*----------------------------------------------------------------
-        Increment the iteration divisor and increment the current return
-        until the timer ISR prints it out to reset it.
-        ----------------------------------------------------------------*/
-        if( ++g_j > ITERATION ) {
-            g_averaged_value += g_current_return;
-            g_i++;
-            g_j = 0;
-        }
-    }
-   
-   if( get_flag( FLAG_PWRUP ) ) {
+    if( get_flag( FLAG_PWRUP ) ) {
         /*----------------------------------------------------------------
         Wait for button to record motor time
         ----------------------------------------------------------------*/
@@ -374,11 +319,98 @@ void loop
                 --------------------------------------------------------*/
                 set_flag( FLAG_GATE );
             }
-            
+        } 
+    }
+
+}  /* button_callback() */
+
+/*------------------------------------------------------------------------
+
+    PROCEDURE NAME: timer1_callback
+
+    DESCRIPTION: Callback for the Timer 1 interrupt.
+
+------------------------------------------------------------------------*/
+
+void timer1_callback
+    (
+    void
+    )
+{
+    if( get_flag( FLAG_SETUP ) ) {
+        /*----------------------------------------------------------------
+        Average the value over the number of samples
+        ----------------------------------------------------------------*/
+        g_averaged_value /= g_i;
+        
+        /*----------------------------------------------------------------
+        Add the value to the array of values
+        ----------------------------------------------------------------*/
+        g_profiling_array[ g_state ][ g_time_iteration++ ] = g_averaged_value;
+        
+        /*----------------------------------------------------------------
+        Print current value for debug
+        ----------------------------------------------------------------*/
+        Serial.println( g_averaged_value );
+        
+        /*----------------------------------------------------------------
+        Reset iteration variables
+        ----------------------------------------------------------------*/
+        g_averaged_value = 0;
+        g_i              = 0;
+        
+        /*----------------------------------------------------------------
+        Increment time values
+        ----------------------------------------------------------------*/
+        g_time_in_direction[ g_state ]++;
+    }
+    
+    /*--------------------------------------------------------------------
+    Stop motor when running and time has elapsed
+    --------------------------------------------------------------------*/
+    if( get_flag( FLAG_RUN ) && get_flag( FLAG_GATE ) ) {
+        if( ++g_time_iteration == g_time_in_direction[ g_state ] ) {
+            set_flag( FLAG_STOP );
+        }
+    }
+
+}  /* timer1_callback() */
+
+/*------------------------------------------------------------------------
+
+    PROCEDURE NAME: loop
+
+    DESCRIPTION: Called in an infinite loop after the setup() function.
+
+------------------------------------------------------------------------*/
+
+void loop
+    (
+    void
+    )
+{
+    if( get_flag( FLAG_SETUP ) || get_flag( FLAG_RUN ) ) {
+        /*----------------------------------------------------------------
+        Get current if in a setup or running state
+        ----------------------------------------------------------------*/
+        g_current_return = analogRead( CURRENT_INP );
+
+        /*----------------------------------------------------------------
+        Increment the iteration divisor and increment the current return
+        until the timer ISR prints it out to reset it.
+        ----------------------------------------------------------------*/
+        if( ++g_j > ITERATION ) {
+            g_averaged_value += g_current_return;
+            g_i++;
+            g_j = 0;
+        }
+    }
+    
+    if( get_flag( FLAG_RUN ) ) {
         /*----------------------------------------------------------------
         Stop the motor when it has run for the correct time
         ----------------------------------------------------------------*/
-        } else if( get_flag( FLAG_STOP ) ) {
+        if( get_flag( FLAG_STOP ) ) {
             /*------------------------------------------------------------
             Stop the motor and clear the flags
             ------------------------------------------------------------*/
@@ -387,8 +419,7 @@ void loop
             clear_flag( FLAG_GATE );
             clear_flag( FLAG_STOP );
         }
-        
     }
     
-}
+}  /* loop() */
 
