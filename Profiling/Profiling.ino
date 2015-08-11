@@ -56,6 +56,11 @@ Flags for state control
 #define FLAG_CHECK  0x10                /* First Direction Checked      */
 #define FLAG_GATE   0x20                /* Gate One-Time Operations     */
 
+/*------------------------------------------------------------------------
+Tolerance Control
+------------------------------------------------------------------------*/
+#define MOTOR_RANGE 15                  /* Range of Current Deviation   */
+
 /*************************************************************************
                              GLOBAL VARIABLES
 *************************************************************************/
@@ -369,6 +374,37 @@ void timer1_callback
     Stop motor when running and time has elapsed
     --------------------------------------------------------------------*/
     if( get_flag( FLAG_RUN ) && get_flag( FLAG_GATE ) ) {
+        /*----------------------------------------------------------------
+        Average the value over the number of samples
+        ----------------------------------------------------------------*/
+        g_averaged_value /= g_i;
+        
+        /*----------------------------------------------------------------
+        Print current value for debug
+        ----------------------------------------------------------------*/
+        Serial.print( g_averaged_value );
+        Serial.print( " / " );
+        Serial.print( g_profiling_array[ g_state ][ g_time_iteration ] );
+        
+        /*----------------------------------------------------------------
+        Check against currently profiled values
+        ----------------------------------------------------------------*/
+        if( ( ( g_profiling_array[ g_state ][ g_time_iteration ] + MOTOR_RANGE ) < g_averaged_value )
+         || ( ( g_profiling_array[ g_state ][ g_time_iteration ] - MOTOR_RANGE ) > g_averaged_value ) ) {
+            Serial.println( " -- CURRENT ISSUE DETECTED!" );
+        } else {
+            Serial.println( "" );
+        }
+        
+        /*----------------------------------------------------------------
+        Reset iteration variables
+        ----------------------------------------------------------------*/
+        g_averaged_value = 0;
+        g_i              = 0;
+        
+        /*----------------------------------------------------------------
+        Stop if time has elapsed
+        ----------------------------------------------------------------*/
         if( ++g_time_iteration == g_time_in_direction[ g_state ] ) {
             set_flag( FLAG_STOP );
         }
@@ -389,7 +425,7 @@ void loop
     void
     )
 {
-    if( get_flag( FLAG_SETUP ) || get_flag( FLAG_RUN ) ) {
+    if( get_flag( FLAG_SETUP ) || ( get_flag( FLAG_RUN ) && get_flag( FLAG_GATE ) ) ) {
         /*----------------------------------------------------------------
         Get current if in a setup or running state
         ----------------------------------------------------------------*/
